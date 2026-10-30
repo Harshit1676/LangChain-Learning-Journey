@@ -1,0 +1,12 @@
+﻿# Local secrets and environment
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Temporary editor files
+tempCodeRunnerFile.py
+.vscode/
