@@ -5,3 +5,4 @@ text = "Delhi is the capital is India"
 
 vector = embedding.embed_query(text)
 print(str(vector))
+print("Dimensions: ",len(vector))

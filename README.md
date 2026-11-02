@@ -4,12 +4,14 @@ A collection of small Python examples documenting practical LangChain learning.
 
 ## Topics completed
 
-- **Chat models:** invoke OpenAI-compatible models through OpenRouter, Gemini through `ChatGoogleGenerativeAI`, and hosted Hugging Face models through `HuggingFaceEndpoint` and `ChatHuggingFace`.
+- **Chat models:** invoke OpenAI-compatible models through OpenRouter, Gemini through `ChatGoogleGenerativeAI`, and hosted Hugging Face models through `HuggingFaceEndpoint` and `ChatHuggingFace` (the current Hugging Face example selects `google/gemma-3-4b-it` and sets generation options).
 - **Embeddings and similarity:** create local Hugging Face and API-based embeddings, then rank sample documents with cosine similarity.
 - **Prompts and Streamlit:** build and serialize a `PromptTemplate`, load it into a Streamlit UI, and submit static or selection-based prompts to a chat model. A chat prompt example also combines system and human templates with a history placeholder.
 - **Model responses:** call models with `invoke()` and read chat output from `AIMessage.content`.
 - **Message history:** represent system, human, and AI turns as message objects, include earlier turns in later model calls, and insert a history list into a `ChatPromptTemplate` with `MessagesPlaceholder`.
 - **Structured output:** ask a chat model to return review data according to a JSON Schema, Pydantic model, or `TypedDict` schema. The examples compare these schema declarations; they do not yet validate untrusted model output in a larger application flow.
+- **Output parsing and LCEL:** parse model text as a string or JSON, and connect prompts, models, parsers, and a second prompt into runnable pipelines.
+- **External-text embeddings:** wrap text in a LangChain `Document`, generate query/document embeddings, and inspect vector dimensions. These examples do not yet store or retrieve vectors from a vector database.
 
 These are introductory examples; the command-line chatbot keeps history only in process memory and sends the full conversation on every turn. It does not yet implement durable chat storage, document retrieval, vector stores, or a complete RAG pipeline.
 
@@ -23,6 +25,8 @@ These are introductory examples; the command-line chatbot keeps history only in 
 | `Prompts/` | Prompt serialization, loading, and Streamlit interfaces |
 | `chatbot/` | Chat prompt formatting, message objects, and a terminal chat loop |
 | `Structured_output/` | Structured review extraction with JSON Schema, Pydantic, and `TypedDict`, plus standalone schema/type examples |
+| `Revision/` | OpenRouter chat, embeddings, external text embedding, and chatbot examples |
+| `sample_document.txt` | Sample text embedded by the external-file example |
 | `docs/practical-notes/` | PDF study notes on prompts, messages/history, chat models, embeddings, and coding revision |
 | `hello.py` | Small chat message invocation example |
 | `lecture3_notes.txt` | Lecture notes |
@@ -30,7 +34,7 @@ These are introductory examples; the command-line chatbot keeps history only in 
 
 ## Key APIs used
 
-`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `invoke()`, and scikit-learn's `cosine_similarity`.
+`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `Document`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `JsonOutputParser`, `StrOutputParser`, `invoke()`, LCEL's `|` composition, and scikit-learn's `cosine_similarity`.
 
 ## Learning entries
 
@@ -164,6 +168,93 @@ The three `with_structured_output_*.py` examples send the same long phone review
 #### Source files
 
 `Structured_output/with_structured_output_json.py`, `Structured_output/with_structured_output_pydantic.py`, `Structured_output/with_structured_output_typeddict.py`, `Structured_output/pydantic_demo.py`, `Structured_output/typedict_demo.py`, and `Structured_output/json_schema.json`.
+
+### Output parsers and LCEL pipelines
+
+#### Concept
+
+Output parsers turn a model response into a useful Python value. `StrOutputParser` extracts text from a chat-model message; `JsonOutputParser` parses JSON text into Python data. LCEL's `|` operator connects compatible prompt, model, and parser runnables so the complete sequence can be invoked as one chain.
+
+#### Why it is useful
+
+Prompts and chat models commonly produce message objects, while later application steps need plain text or structured data. Parsers make that conversion explicit. Composing steps as a chain reduces manual handoffs and makes a multi-step flow reusable.
+
+#### Important components
+
+- `PromptTemplate` formats the input variables into a prompt. `partial_variables` supplies `JsonOutputParser.get_format_instructions()` when the template is created.
+- `JsonOutputParser` parses JSON-formatted model text into Python values such as dictionaries. Its format instructions guide the model; parsing can still fail if the response is malformed.
+- `StrOutputParser` converts a chat-model result to text, which can then become the input to another prompt.
+- LCEL composition (`prompt | model | parser`) passes each step's output to the next step. Calling `chain.invoke(input_dict)` runs the sequence and returns the final step's output.
+
+#### Working flow
+
+```mermaid
+flowchart LR
+    A[Input values] --> B[Prompt template]
+    B --> C[Chat model]
+    C --> D[Output parser]
+    D --> E[Parsed output]
+    E -. optional next stage .-> F[Second prompt and model]
+```
+
+#### Code understanding
+
+`jsonOutputParser.py` demonstrates the steps separately: it inserts the parser's format instructions into a prompt, formats that prompt, invokes the model, and parses `result.content`. `jsonOutputParser_chain.py` expresses the same sequence as `template | model | parser` and invokes it with an empty input mapping because the template has no required variables. `strOutputParser.py` similarly runs a topic prompt, model, text parser, summary prompt, model, and text parser in one pipeline. `strOutPutParser1.py` writes the two prompt/model calls out explicitly, making the intermediate message handoff visible.
+
+#### Important learning
+
+- The parser is a separate processing step after the model; it does not make a request to the model itself.
+- A chain's output is the output of its last component. Here the final parser returns a dictionary for JSON or plain text for string parsing.
+- LCEL composition helps express a sequence, while the explicit version can be easier to inspect when learning or debugging intermediate values.
+
+#### Common mistakes and limitations
+
+- In both summary examples, the template uses `/n` instead of the newline escape `\n`; this sends the literal characters `/n` in the prompt.
+- The JSON examples ask for fields in natural language but do not provide a concrete application schema. `JsonOutputParser` parses JSON but does not enforce the same typed validation as a Pydantic model.
+- None of these examples handles provider errors, malformed JSON, retries, or validation of returned fields. The API request requires valid credentials and network access, so source inspection alone does not demonstrate a successful remote run.
+- `jsonOutputParser.py` has no required template variables, so `format()` is valid here; `invoke({})` is the analogous input style in the chained example.
+
+#### Interview preparation
+
+1. **What does `StrOutputParser` do?** It converts a chat-model output message into its text content for downstream steps.
+2. **What does `JsonOutputParser` return?** It parses valid JSON text into Python data, commonly a dictionary or list; it does not by itself define application-specific validation rules.
+3. **What does `prompt | model | parser` mean?** It composes runnables so each step receives the prior step's output, and the parser's result becomes the chain output.
+4. **Why include format instructions in a JSON prompt?** They guide the model toward a representation the parser can read, though they do not guarantee valid output.
+
+#### Source files
+
+`Structured_output/jsonOutputParser.py`, `Structured_output/jsonOutputParser_chain.py`, `Structured_output/strOutputParser.py`, and `Structured_output/strOutPutParser1.py`.
+
+### Embedding external text with `Document`
+
+#### Concept
+
+Embeddings map text into numeric vectors so semantic similarity can be compared. The examples use `embed_query()` for a single query and `embed_documents()` for a list of text documents. LangChain's `Document` pairs page text with metadata such as a source name.
+
+#### Why it is useful
+
+Embedding queries and candidate texts enables meaning-based matching even when they do not share the same keywords. A `Document` also gives later retrieval steps a place to carry source metadata alongside text.
+
+#### Important components and flow
+
+`OpenAIEmbeddings` selects the embedding model and compatible API endpoint. `embed_query(text)` returns one vector; `embed_documents(list_of_texts)` returns one vector per input text. In `docx_embed_ecternal_file.py`, the script reads `sample_document.txt`, creates a `Document`, passes its `page_content` to `embed_documents()`, and prints vector count and a sample of the first vector. `Embedding_model_openai.py` requests a 32-dimensional vector for one query; `Embedding_docx_openai.py` embeds three short machine-learning descriptions. The modified local Hugging Face example also prints the returned query vector's length.
+
+#### Important learning and limitations
+
+- `Document.metadata` stores provenance, but the external-file example does not use or return that metadata in the embedding call; it embeds only `page_content`.
+- The examples generate vectors but do not persist them, compare them, or retrieve relevant documents. `EmbeddedModels/document_similarity.py` is the existing cosine-similarity example that takes the next step of ranking.
+- In `Embedding_docx_openai.py`, `len(result)` counts the three returned document vectors, not their dimensionality. Inspect `len(result[0])` to report vector size. The single-vector example correctly measures `len(result)`.
+- A requested dimension such as 32 is a model/API capability choice and should match the embedding provider's supported parameters. No remote embedding request was run as part of this analysis.
+
+#### Interview preparation
+
+1. **How do `embed_query()` and `embed_documents()` differ?** The first embeds one query string; the second embeds a batch/list of document strings and returns one vector per item.
+2. **What does a LangChain `Document` contain?** Text in `page_content` and optional associated `metadata`.
+3. **Does embedding text create a searchable vector store?** No. It produces vectors; storage, indexing, and retrieval are separate steps.
+
+#### Source files
+
+`Revision/Embedding_model_openai.py`, `Revision/Embedding_docx_openai.py`, `Revision/docx_embed_ecternal_file.py`, `sample_document.txt`, `EmbeddedModels/embedding_hf_local.py`, and `EmbeddedModels/document_similarity.py`.
 
 ## Learning roadmap
 
