@@ -232,6 +232,12 @@ LCEL (LangChain Expression Language) composes runnable components with `|`. A ch
 
 `chains/simple_chain.py` demonstrates one prompt/model/`StrOutputParser` chain. `chains/sequential_application.py` uses a first prompt and model to generate a report, parses it to text, then passes that text as `{text}` into a summary prompt, model, and parser. `invoke()` executes the full sequence from the supplied input. `get_graph().print_ascii()` displays the runnable graph; it does not execute or validate the chain. `chains/parallel_chain.py` is empty, so parallel composition is not demonstrated. `Structured_output/pydanticOutputParser.py` and `Revision/chatbot.py` both compose a prompt, model, and `PydanticOutputParser` to return a constrained `Person` value.
 
+```mermaid
+flowchart LR
+    A[Topic input] --> B[Report prompt] --> C[Chat model] --> D[String parser]
+    D --> E[Summary prompt] --> F[Chat model] --> G[String parser] --> H[Summary text]
+```
+
 #### Important learning
 
 - Runnable output becomes the next runnable's input; each boundary must use compatible shapes (here report text is supplied to the summary prompt's `{text}` variable).
