@@ -224,42 +224,22 @@ flowchart LR
 
 #### Source files
 
-`Structured_output/jsonOutputParser.py`, `Structured_output/jsonOutputParser_chain.py`, `Structured_output/strOutputParser.py`, `Structured_output/strOutPutParser1.py`, `Structured_output/pydanticOutputParser.py`, `Revision/chatbot.py`, `chains/simple_chain.py`, and `chains/sequential_application.py`.
+`Structured_output/jsonOutputParser.py`, `Structured_output/jsonOutputParser_chain.py`, `Structured_output/strOutputParser.py`, `Structured_output/strOutPutParser1.py`, `Structured_output/pydanticOutputParser.py`, and `Revision/chatbot.py`.
 
 #### LCEL and chain examples
 
-LCEL (LangChain Expression Language) composes runnable components with `|`. A chain passes each output to the next component, so prompts, models, parsers, and later prompts can run as one reusable unit. This builds on prompt templates and model invocation: the template supplies formatted input, the model generates a message, and a parser converts that message for the next step.
-
-`chains/simple_chain.py` demonstrates one prompt/model/`StrOutputParser` chain. `chains/sequential_application.py` uses a first prompt and model to generate a report, parses it to text, then passes that text as `{text}` into a summary prompt, model, and parser. `invoke()` executes the full sequence from the supplied input. `get_graph().print_ascii()` displays the runnable graph; it does not execute or validate the chain. `chains/parallel_chain.py` is empty, so parallel composition is not demonstrated. `Structured_output/pydanticOutputParser.py` and `Revision/chatbot.py` both compose a prompt, model, and `PydanticOutputParser` to return a constrained `Person` value.
+LCEL composes runnables with `|`; each step passes its output to the next. The simple chain runs a prompt, model, and `StrOutputParser`. The sequential example parses a generated report into text, then supplies it to a summary prompt. `invoke()` runs the chain; `get_graph().print_ascii()` only displays its structure.
 
 ```mermaid
 flowchart LR
-    A[Topic input] --> B[Report prompt] --> C[Chat model] --> D[String parser]
-    D --> E[Summary prompt] --> F[Chat model] --> G[String parser] --> H[Summary text]
+    A[Topic] --> B[Report prompt] --> C[Model] --> D[Text parser]
+    D --> E[Summary prompt] --> F[Model] --> G[Text parser] --> H[Summary]
 ```
 
-#### Important learning
-
-- Runnable output becomes the next runnable's input; each boundary must use compatible shapes (here report text is supplied to the summary prompt's `{text}` variable).
-- A sequential chain waits for each preceding stage. It is different from parallel composition, where independent branches receive shared input and later results are combined.
-- `get_graph()` is an inspection aid; actual model calls happen when `invoke()` runs and require valid credentials and provider access.
-
-#### Common mistakes and limitations
-
-- The summary prompt in `chains/sequential_application.py` uses `/n` rather than `\n`, so it sends the literal slash and letter `n` rather than a line break.
-- `chains/parallel_chain.py` has no implementation, despite its name; no parallel-chain behavior has been learned from this file yet.
-- The examples call a remote OpenRouter-compatible model and do not include provider error handling, retries, or token/cost controls.
-
-#### Interview preparation
-
-1. **What is LCEL?** A way to compose LangChain runnables, commonly with `|`, so compatible outputs flow into the next step.
-2. **What does `prompt | model | parser` return when invoked?** The output produced by the final parser after each earlier stage runs in order.
-3. **How does a sequential chain differ from a parallel chain?** Sequential stages depend on earlier outputs; parallel branches can run independently on shared input before their results are combined.
-4. **What does `get_graph().print_ascii()` do?** It displays a representation of the runnable graph; it does not call the model.
-
-#### Source files
-
-`chains/simple_chain.py`, `chains/sequential_application.py`, `chains/parallel_chain.py`, `Structured_output/pydanticOutputParser.py`, and `Revision/chatbot.py`.
+- **Remember:** adjacent runnables need compatible inputs and outputs. Sequential stages depend on earlier results.
+- **Limitations:** `parallel_chain.py` is empty. The summary prompt uses `/n` instead of `\n`. Remote calls lack error handling and retries.
+- **Interview:** What is LCEL? Runnable composition with `|`. What does `invoke()` return? The final runnable's output. Does `get_graph()` call the model? No.
+- **Files:** `chains/simple_chain.py`, `chains/sequential_application.py`, `chains/parallel_chain.py`.
 
 ### Embedding external text with `Document`
 
