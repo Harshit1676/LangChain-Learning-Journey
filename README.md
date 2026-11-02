@@ -10,7 +10,8 @@ A collection of small Python examples documenting practical LangChain learning.
 - **Model responses:** call models with `invoke()` and read chat output from `AIMessage.content`.
 - **Message history:** represent system, human, and AI turns as message objects, include earlier turns in later model calls, and insert a history list into a `ChatPromptTemplate` with `MessagesPlaceholder`.
 - **Structured output:** ask a chat model to return review data according to a JSON Schema, Pydantic model, or `TypedDict` schema. The examples compare these schema declarations; they do not yet validate untrusted model output in a larger application flow.
-- **Output parsing and LCEL:** parse model text as a string or JSON, and connect prompts, models, parsers, and a second prompt into runnable pipelines.
+- **Output parsing:** parse model text as a string, JSON, or a Pydantic model.
+- **LCEL and chains:** compose prompts, chat models, and parsers into single-stage or sequential runnable pipelines.
 - **External-text embeddings:** wrap text in a LangChain `Document`, generate query/document embeddings, and inspect vector dimensions. These examples do not yet store or retrieve vectors from a vector database.
 
 These are introductory examples; the command-line chatbot keeps history only in process memory and sends the full conversation on every turn. It does not yet implement durable chat storage, document retrieval, vector stores, or a complete RAG pipeline.
@@ -34,7 +35,7 @@ These are introductory examples; the command-line chatbot keeps history only in 
 
 ## Key APIs used
 
-`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `Document`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `JsonOutputParser`, `StrOutputParser`, `invoke()`, LCEL's `|` composition, and scikit-learn's `cosine_similarity`.
+`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `Document`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `JsonOutputParser`, `StrOutputParser`, `PydanticOutputParser`, `invoke()`, LCEL's `|` composition, and scikit-learn's `cosine_similarity`.
 
 ## Learning entries
 
@@ -169,7 +170,7 @@ The three `with_structured_output_*.py` examples send the same long phone review
 
 `Structured_output/with_structured_output_json.py`, `Structured_output/with_structured_output_pydantic.py`, `Structured_output/with_structured_output_typeddict.py`, `Structured_output/pydantic_demo.py`, `Structured_output/typedict_demo.py`, and `Structured_output/json_schema.json`.
 
-### Output parsers and LCEL pipelines
+### Output parsers and LCEL
 
 #### Concept
 
@@ -223,7 +224,36 @@ flowchart LR
 
 #### Source files
 
-`Structured_output/jsonOutputParser.py`, `Structured_output/jsonOutputParser_chain.py`, `Structured_output/strOutputParser.py`, and `Structured_output/strOutPutParser1.py`.
+`Structured_output/jsonOutputParser.py`, `Structured_output/jsonOutputParser_chain.py`, `Structured_output/strOutputParser.py`, `Structured_output/strOutPutParser1.py`, `Structured_output/pydanticOutputParser.py`, `Revision/chatbot.py`, `chains/simple_chain.py`, and `chains/sequential_application.py`.
+
+#### LCEL and chain examples
+
+LCEL (LangChain Expression Language) composes runnable components with `|`. A chain passes each output to the next component, so prompts, models, parsers, and later prompts can run as one reusable unit. This builds on prompt templates and model invocation: the template supplies formatted input, the model generates a message, and a parser converts that message for the next step.
+
+`chains/simple_chain.py` demonstrates one prompt/model/`StrOutputParser` chain. `chains/sequential_application.py` uses a first prompt and model to generate a report, parses it to text, then passes that text as `{text}` into a summary prompt, model, and parser. `invoke()` executes the full sequence from the supplied input. `get_graph().print_ascii()` displays the runnable graph; it does not execute or validate the chain. `chains/parallel_chain.py` is empty, so parallel composition is not demonstrated. `Structured_output/pydanticOutputParser.py` and `Revision/chatbot.py` both compose a prompt, model, and `PydanticOutputParser` to return a constrained `Person` value.
+
+#### Important learning
+
+- Runnable output becomes the next runnable's input; each boundary must use compatible shapes (here report text is supplied to the summary prompt's `{text}` variable).
+- A sequential chain waits for each preceding stage. It is different from parallel composition, where independent branches receive shared input and later results are combined.
+- `get_graph()` is an inspection aid; actual model calls happen when `invoke()` runs and require valid credentials and provider access.
+
+#### Common mistakes and limitations
+
+- The summary prompt in `chains/sequential_application.py` uses `/n` rather than `\n`, so it sends the literal slash and letter `n` rather than a line break.
+- `chains/parallel_chain.py` has no implementation, despite its name; no parallel-chain behavior has been learned from this file yet.
+- The examples call a remote OpenRouter-compatible model and do not include provider error handling, retries, or token/cost controls.
+
+#### Interview preparation
+
+1. **What is LCEL?** A way to compose LangChain runnables, commonly with `|`, so compatible outputs flow into the next step.
+2. **What does `prompt | model | parser` return when invoked?** The output produced by the final parser after each earlier stage runs in order.
+3. **How does a sequential chain differ from a parallel chain?** Sequential stages depend on earlier outputs; parallel branches can run independently on shared input before their results are combined.
+4. **What does `get_graph().print_ascii()` do?** It displays a representation of the runnable graph; it does not call the model.
+
+#### Source files
+
+`chains/simple_chain.py`, `chains/sequential_application.py`, `chains/parallel_chain.py`, `Structured_output/pydanticOutputParser.py`, and `Revision/chatbot.py`.
 
 ### Embedding external text with `Document`
 
