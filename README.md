@@ -11,7 +11,7 @@ A collection of small Python examples documenting practical LangChain learning.
 - **Message history:** represent system, human, and AI turns as message objects, include earlier turns in later model calls, and insert a history list into a `ChatPromptTemplate` with `MessagesPlaceholder`.
 - **Structured output:** ask a chat model to return review data according to a JSON Schema, Pydantic model, or `TypedDict` schema. The examples compare these schema declarations; they do not yet validate untrusted model output in a larger application flow.
 - **Output parsing:** parse model text as a string, JSON, or a Pydantic model.
-- **LCEL and chains:** compose prompts, chat models, and parsers into single-stage or sequential runnable pipelines.
+- **LCEL and chains:** compose prompts, chat models, and parsers into sequential pipelines, conditional routes, and parallel branches.
 - **External-text embeddings:** wrap text in a LangChain `Document`, generate query/document embeddings, and inspect vector dimensions. These examples do not yet store or retrieve vectors from a vector database.
 
 These are introductory examples; the command-line chatbot keeps history only in process memory and sends the full conversation on every turn. It does not yet implement durable chat storage, document retrieval, vector stores, or a complete RAG pipeline.
@@ -27,6 +27,7 @@ These are introductory examples; the command-line chatbot keeps history only in 
 | `chatbot/` | Chat prompt formatting, message objects, and a terminal chat loop |
 | `Structured_output/` | Structured review extraction with JSON Schema, Pydantic, and `TypedDict`, plus standalone schema/type examples |
 | `Revision/` | OpenRouter chat, embeddings, external text embedding, and chatbot examples |
+| `chains/` | Simple and sequential LCEL chains, sentiment routing, and parallel notes/quiz generation |
 | `sample_document.txt` | Sample text embedded by the external-file example |
 | `docs/practical-notes/` | PDF study notes on prompts, messages/history, chat models, embeddings, and coding revision |
 | `hello.py` | Small chat message invocation example |
@@ -35,7 +36,7 @@ These are introductory examples; the command-line chatbot keeps history only in 
 
 ## Key APIs used
 
-`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `Document`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `JsonOutputParser`, `StrOutputParser`, `PydanticOutputParser`, `invoke()`, LCEL's `|` composition, and scikit-learn's `cosine_similarity`.
+`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatHuggingFace`, `HuggingFaceEndpoint`, `OpenAIEmbeddings`, `HuggingFaceEmbeddings`, `Document`, `PromptTemplate`, `ChatPromptTemplate`, `MessagesPlaceholder`, `SystemMessage`, `HumanMessage`, `AIMessage`, `load_prompt()`, `embed_query()`, `embed_documents()`, `with_structured_output()`, `JsonOutputParser`, `StrOutputParser`, `PydanticOutputParser`, `RunnableBranch`, `RunnableParallel`, `RunnableLambda`, `invoke()`, LCEL's `|` composition, and scikit-learn's `cosine_similarity`.
 
 ## Learning entries
 
@@ -79,7 +80,7 @@ The diagram combines the two demonstrations: `message_placeholder.py` loads a sa
 
 `chatbot/chat_prompt_template.py` demonstrates variable substitution for `{domain}` and `{topic}` in system and human messages. It formats a prompt but does not invoke a model; its imported message classes are unused in this file.
 
-`chatbot/messages.py` constructs a system/human message list, invokes the model, and appends a new `AIMessage` built from the returned content. `chatbot/chatbot.py` starts with a system message, then on each input appends a human message, invokes the model with the full list, appends the reply, and prints it. Typing `exit` ends the loop. This is manual history management rather than a built-in persistent memory feature.
+`chatbot/messages.py` constructs a system/human message list, invokes the model, and appends a new `AIMessage` built from the returned content. `chatbot/chatbot.py` starts with a system message, then on each input appends a human message, invokes the model with the full list, appends the reply, and prints it. Typing `exit` ends the loop. This is manual history management rather than a built-in persistent memory feature. The new `Revision/chatbot_revision.py` follows a similar loop, while `Revision/messages_chatbot.py` is a one-shot message-list example; both use message objects and `ChatOpenAI` but contain implementation errors described below.
 
 #### Important learning
 
@@ -93,6 +94,7 @@ The diagram combines the two demonstrations: `message_placeholder.py` loads a sa
 - The file parser assumes a specific `HumanMessage(content=...)` / `AIMessage(content=...)` line representation and maps every non-human line to the AI role. It can misread system/tool messages and should not be treated as a general message serialization format.
 - `open('Prompts/chat_history.txt')` uses a working-directory-relative path, so launching the script from another directory may fail. A path based on `__file__` is more robust.
 - The interactive loop has no error handling, context limit, or persistence, and sends the entire accumulated history every turn.
+- In `Revision/chatbot_revision.py`, `user_input.lower` is compared without calling the method (`user_input.lower()`), so the `exit` check never matches. In `Revision/messages_chatbot.py`, `AIMessage(content="result.content")` stores literal text rather than the model response; it should use `result.content`. These files show the intended message-list pattern but do not correctly demonstrate the respective behavior as written.
 - The examples implement basic history handling, not LangChain's newer runnable-based history integration or a production conversation store.
 - `chatbot/chat_prompt_template.py` imports `SystemMessage` and `HumanMessage` without using them; this does not affect the demonstrated prompt formatting.
 
@@ -106,7 +108,7 @@ The diagram combines the two demonstrations: `message_placeholder.py` loads a sa
 
 #### Source files
 
-`Prompts/message_placeholder.py`, `Prompts/chat_history.txt`, `chatbot/chat_prompt_template.py`, `chatbot/chatbot.py`, `chatbot/messages.py`, and `hello.py`.
+`Prompts/message_placeholder.py`, `Prompts/chat_history.txt`, `chatbot/chat_prompt_template.py`, `chatbot/chatbot.py`, `chatbot/messages.py`, `Revision/chatbot_revision.py`, `Revision/messages_chatbot.py`, and `hello.py`.
 
 ### Structured output with schemas
 
@@ -236,10 +238,113 @@ flowchart LR
     D --> E[Summary prompt] --> F[Model] --> G[Text parser] --> H[Summary]
 ```
 
-- **Remember:** adjacent runnables need compatible inputs and outputs. Sequential stages depend on earlier results.
-- **Limitations:** `parallel_chain.py` is empty. The summary prompt uses `/n` instead of `\n`. Remote calls lack error handling and retries.
+- **Remember:** adjacent runnables need compatible inputs and outputs. Sequential stages depend on earlier results. `RunnableParallel` sends the same input mapping to its branches and combines outputs under declared keys for the next stage.
+- **Limitations:** the new parallel example creates two identically configured model objects, imports unused dependencies, and has no provider error handling. `get_graph()` visualizes the composed workflow; it does not execute it.
 - **Interview:** What is LCEL? Runnable composition with `|`. What does `invoke()` return? The final runnable's output. Does `get_graph()` call the model? No.
 - **Files:** `chains/simple_chain.py`, `chains/sequential_application.py`, `chains/parallel_chain.py`.
+
+### Conditional routing with `RunnableBranch`
+
+#### Concept
+
+`RunnableBranch` chooses a runnable based on predicates applied to the current input. This example first classifies feedback into a Pydantic `feedback` result, then routes that result to a response-generation chain. It adds decision-based flow control to an LCEL composition.
+
+#### Why it is useful
+
+Applications often need different processing for different inputs, such as selecting response strategies based on feedback sentiment. A branch keeps the condition and the selected runnable inside a composable chain.
+
+#### Important components
+
+- `PydanticOutputParser` parses the classifier response into an object with a `sentiment` field, using the `feedback` Pydantic model.
+- `PromptTemplate` formats the classification request. Its `partial_variables` inject format instructions; the runtime `feedback` value fills the remaining variable.
+- `RunnableBranch((predicate, runnable), ..., default)` evaluates conditions in order, runs the first matching branch, and uses the final runnable as a fallback.
+- `RunnableLambda` wraps a regular Python function as a runnable for the fallback.
+- `classifier_chain | branch_chain` passes the parsed classifier object to the branch. `chain.invoke(...)` starts the whole flow with an input mapping.
+
+#### Working flow
+
+```mermaid
+flowchart LR
+    A[Feedback text] --> B[Classification prompt] --> C[Chat model] --> D[Pydantic parser]
+    D --> E{Sentiment}
+    E -->|positive| F[Positive response chain]
+    E -->|negative| G[Negative response chain]
+    E -->|other| H[Fallback]
+```
+
+#### Code understanding
+
+The script defines a two-value sentiment model, asks the model to classify the input, and branches on `x.sentiment`. Each selected prompt is followed by a model and `StrOutputParser`, so the chain returns response text. The fallback returns a fixed string. `get_graph().print_ascii()` prints the composed structure; it does not run model calls.
+
+#### Important learning
+
+- A branch predicate sees the output from the runnable immediately before it. Here that is a Pydantic object, so its field is accessed as `x.sentiment`.
+- Branch order matters when predicates overlap; the default handles inputs that match no predicate.
+- A schema constrains expected classification shape, but applications still need to handle parse and provider errors.
+
+#### Common mistakes and limitations
+
+- Both response prompts currently say “positive feedback,” including the negative branch. The negative route selects a prompt with the wrong instruction.
+- The schema permits only `positive` and `negative`; there is no neutral route. The default does not catch invalid output if parsing fails before branching.
+- The example does not test edge cases, retries, or error handling.
+
+#### Interview preparation
+
+1. **What does `RunnableBranch` do?** It evaluates predicates against its input and runs the first matching runnable, or a default runnable if none match.
+2. **What input does the branch inspect here?** The parsed `feedback` Pydantic object returned by `classifier_chain`.
+3. **Why use `RunnableLambda`?** It adapts a regular Python callable so it can be composed as an LCEL runnable.
+4. **What happens when no predicate matches?** The configured default runnable executes.
+
+#### Source files
+
+`chains/conditional_chain.py`.
+
+### Parallel runnable branches with `RunnableParallel`
+
+#### Concept
+
+`RunnableParallel` invokes multiple runnable branches with the same input and collects their outputs into a mapping. This example independently generates study notes and question-answer pairs from one text, then passes both results to a merge prompt.
+
+#### Why it is useful
+
+Independent transformations can produce multiple outputs for a later step. This organizes workflows that generate, for example, a summary and quiz from the same source before combining them.
+
+#### Important components
+
+- `RunnableParallel` maps output keys (`notes`, `quiz`) to runnable sequences. Each sequence contains a prompt, chat model, and `StrOutputParser`.
+- `PromptTemplate` formats each branch's task using the shared `{text}` input. The merge template takes `{notes}` and `{quiz}`.
+- `StrOutputParser` converts each model message to text; `prompt3 | model | parser` consumes the parallel result mapping.
+- `invoke({'text': text})` runs the composed sequence. Its final output is the merge chain's text result.
+
+#### Working flow
+
+The input text is passed to both branches, producing `{'notes': ..., 'quiz': ...}`. That mapping flows into the merge prompt, which asks a model to produce one document; the parser returns its text.
+
+#### Code understanding
+
+`parallel_chain` declares the two keyed prompt/model/parser branches. Composing it with `merge_chain` means the merge step receives the branch result mapping. `get_graph().print_ascii()` inspects the composition; `invoke()` performs the model calls.
+
+#### Important learning
+
+- Parallel branches receive the same input mapping and their outputs are collected by key. The downstream step must accept that output shape.
+- Parallel composition describes independent workflow branches; it does not guarantee speedup. Runtime scheduling, provider limits, latency, and cost still apply.
+- The merge is a separate sequential step that depends on both branch results.
+
+#### Common mistakes and limitations
+
+- The example creates two `ChatOpenAI` objects with identical configuration; separate objects are unnecessary to demonstrate independent branches.
+- `ChatGoogleGenerativeAI` is imported but unused. There is no handling for a branch failure and no validation that the merge contains all requested material.
+
+#### Interview preparation
+
+1. **What does `RunnableParallel` return?** A mapping from configured branch names to their outputs.
+2. **What input does each branch receive?** The same input passed to the parallel runnable.
+3. **How does the merge prompt receive both outputs?** It receives the mapping and fills `{notes}` and `{quiz}` from matching keys.
+4. **Does parallel composition remove model latency or cost?** No. Actual time and usage depend on runtime scheduling and provider behavior.
+
+#### Source files
+
+`chains/parallel_chain.py`.
 
 ### Embedding external text with `Document`
 
